@@ -11,7 +11,7 @@ def main() -> None:
 
     client = NugetClient()
 
-    with ThreadPool(initializer=globals.init, initargs=(globals.lock,)) as pool:
+    with ThreadPool(processes=None, initializer=globals.init, initargs=(globals.lock,)) as pool:
         args = ((pref.name, pref.version) for pref in prefs)
         async_result = pool.starmap_async(client.get_metadata, args)
         results = async_result.get()

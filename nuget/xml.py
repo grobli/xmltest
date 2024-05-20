@@ -3,17 +3,16 @@ from dataclasses import dataclass, field
 
 
 class Consts:
-    class XML:
-        class Attributes:
-            INCLUDE = 'Include'
-            VERSION = 'Version'
-            VERSION_OVERRIDE = 'VersionOverride'
+    class Attributes:
+        INCLUDE = 'Include'
+        VERSION = 'Version'
+        VERSION_OVERRIDE = 'VersionOverride'
 
-        class Elements:
-            PACKAGE_REFERENCE = 'PackageReference'
-            PROPERTY_GROUP = 'PropertyGroup'
-            ITEM_GROUP = 'ItemGroup'
-            PROJECT = 'Project'
+    class Elements:
+        PACKAGE_REFERENCE = 'PackageReference'
+        PROPERTY_GROUP = 'PropertyGroup'
+        ITEM_GROUP = 'ItemGroup'
+        PROJECT = 'Project'
 
 
 @dataclass(init=False)
@@ -27,15 +26,15 @@ class PackageReference:
 
     @property
     def name(self) -> str:
-        return self.xml.get(Consts.XML.Attributes.INCLUDE)
+        return self.xml.get(Consts.Attributes.INCLUDE)
 
     @property
     def version(self) -> str:
-        return self.xml.get(Consts.XML.Attributes.VERSION)
+        return self.xml.get(Consts.Attributes.VERSION)
 
     @version.setter
     def version(self, value: str | None) -> None:
-        VERSION = Consts.XML.Attributes.VERSION
+        VERSION = Consts.Attributes.VERSION
 
         if value and not self.version_override:
             self.xml.set(VERSION, value)
@@ -46,12 +45,12 @@ class PackageReference:
 
     @property
     def version_override(self) -> str | None:
-        return self.xml.get(Consts.XML.Attributes.VERSION_OVERRIDE)
+        return self.xml.get(Consts.Attributes.VERSION_OVERRIDE)
 
     @version_override.setter
     def version_override(self, value: str | None) -> None:
-        VERSION = Consts.XML.Attributes.VERSION
-        VERSION_OVERRIDE = Consts.XML.Attributes.VERSION_OVERRIDE
+        VERSION = Consts.Attributes.VERSION
+        VERSION_OVERRIDE = Consts.Attributes.VERSION_OVERRIDE
 
         if isinstance(value, property):
             return
@@ -76,7 +75,7 @@ class PackageReference:
         pref = PackageReference()
         pref.root = item_group
         pref.xml = element
-        pref.version = element.get(Consts.XML.Attributes.VERSION)
+        pref.version = element.get(Consts.Attributes.VERSION)
         return pref
 
     def __del__(self):
@@ -88,14 +87,14 @@ def get_package_references(csproj_filepath: str) -> list[PackageReference]:
     tree = ET.parse(csproj_filepath, parser=parser)
     root = tree.getroot()
 
-    XPATH = f'./{Consts.XML.Elements.ITEM_GROUP}[{
-        Consts.XML.Elements.PACKAGE_REFERENCE}]'
+    XPATH = f'./{Consts.Elements.ITEM_GROUP}[{
+        Consts.Elements.PACKAGE_REFERENCE}]'
 
     prefs: list[PackageReference] = []
     itemgroups = root.findall(XPATH)
     for ig in itemgroups:
         for elem in ig.iter():
-            if elem.tag == Consts.XML.Elements.PACKAGE_REFERENCE:
+            if elem.tag == Consts.Elements.PACKAGE_REFERENCE:
                 pref = PackageReference.create(elem, ig)
                 prefs.append(pref)
     return prefs

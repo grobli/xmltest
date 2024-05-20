@@ -1,9 +1,16 @@
+import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urljoin
+from uuid import uuid4
+import gzip
 
+import jsonpickle
 import requests
+
+import globals
 
 from .models import main_index as main
 from .models import metadata as meta
@@ -12,32 +19,120 @@ from .models import metadata as meta
 @dataclass(init=False)
 class CacheEntry:
     timestamp = datetime
-    data: Any
+    filename: str
 
     @staticmethod
-    def create(data: Any) -> 'CacheEntry':
+    def create() -> 'CacheEntry':
         ce = CacheEntry()
         ce.timestamp = datetime.now()
-        ce.data = data
+        ce.filename = f'{uuid4()}.cache'
         return ce
-    
+
+    @staticmethod
+    def loadjson(data: dict[str, str]) -> 'CacheEntry':
+        ce = CacheEntry()
+        ce.timestamp = datetime.fromisoformat(data['timestamp'])
+        ce.filename = data['filename']
+        return ce
+
+    def dump(self) -> dict[str, str]:
+        d = {}
+        d['timestamp'] = self.timestamp.isoformat()
+        d['filename'] = self.filename[:]
+        return d
+
+    def refresh(self) -> None:
+        self.timestamp = datetime.now()
+
+
 class Cache:
-    def __init__(self, cache_dirpath) -> None:
-        pass
+    INDEX_FILENAME = 'index.json'
+
+    def __init__(self, cache_dirpath: str) -> None:
+        self.cache_dirpath = cache_dirpath
+        self.index: dict[str, CacheEntry] = {}
+        self.index_filepath = os.path.join(cache_dirpath, Cache.INDEX_FILENAME)
+
+    @staticmethod
+    def init(cache_dirpath: str) -> 'Cache':
+        def load_index(cache: Cache) -> None:
+            if os.path.exists(cache.index_filepath) and os.path.isfile(cache.index_filepath):
+                with open(cache.index_filepath, mode='rt') as file:
+                    data: dict = json.load(file)
+                    for key in data.keys():
+                        cache.index[key] = CacheEntry.loadjson(data[key])
+
+        if not os.path.exists(cache_dirpath):
+            os.mkdir(cache_dirpath)
+
+        cache = Cache(cache_dirpath)
+        load_index(cache)
+        return cache
+
+    def save(self) -> None:
+        with globals.lock:
+            index_dict: dict[str, dict[str, str]] = {}
+            for key in self.index.keys():
+                index_dict[key] = self.index[key].dump()
+
+            with open(self.index_filepath, mode='wt') as file:
+                json.dump(index_dict, file)
+
+    def add(self, key: str, value: Any) -> None:
+        with globals.lock:
+            cache_entry: CacheEntry = None
+            if ce := self.index.get(key):
+                ce.refresh()
+                cache_entry = ce
+            if not cache_entry:
+                cache_entry = CacheEntry.create()
+                self.index[key] = cache_entry
+
+            filepath = os.path.join(self.cache_dirpath, cache_entry.filename)
+            with gzip.open(filepath, mode='wb') as file:
+                json: str = jsonpickle.encode(value)
+                file.write(json.encode())
+
+            self.save()
+
+    def get(self, key: str) -> Any | None:
+        with globals.lock:
+            if key not in self.index:
+                return None
+            filepath = os.path.join(
+                self.cache_dirpath, self.index[key].filename)
+            with gzip.open(filepath, mode='rb') as file:
+                json = file.read().decode()
+                value = jsonpickle.decode(json)
+                return value
+
+
+class CachedHttpClient:
+    def __init__(self, cache_dirpath: str) -> None:
+        self.cache = Cache.init(cache_dirpath)
+        self.session = requests.Session()
+
+    def get(self, url: str) -> requests.Response:
+        if response := self.cache.get(url):
+            return response
+        response = self.session.get(url)
+        response.raise_for_status()
+        self.cache.add(url, response)
+        return response
 
 
 class NugetClient:
     NUGETORG_API_BASEURL = 'https://api.nuget.org/'
 
-    def __init__(self, baseurl: str = None) -> None:
+    def __init__(self, baseurl: str = None, cache_dirpath='./cache') -> None:
+        self.httpclient = CachedHttpClient(cache_dirpath)
         self.baseurl = baseurl if baseurl else NugetClient.NUGETORG_API_BASEURL
         self.__index: main.Index = self.__get_index()
-        pass
 
     def __get_index(self, version='v3') -> main.Index:
         url = urljoin(self.baseurl, f'/{version}/index.json')
         url = quote(url, safe="/:")
-        resp = requests.get(url)
+        resp = self.httpclient.get(url)
         index_json = resp.json()
         index = main.Index.create(index_json)
         return index
@@ -59,7 +154,7 @@ class NugetClient:
         def get_catalogpages(metadata: meta.IndexItem) -> list[meta.CatalogPage]:
             pages: list[meta.CatalogPage] = []
 
-            response = requests.get(metadata.url)
+            response = self.httpclient.get(metadata.url)
             json = response.json()
             type = json['@type']
 
@@ -79,7 +174,7 @@ class NugetClient:
             id = self.__index.resources['RegistrationsBaseUrl/3.6.0'][0].id
             url = urljoin(id, f'{package_name.lower()}/index.json')
             url = quote(url, safe='/:')
-            resp = requests.get(url)
+            resp = self.httpclient.get(url)
             json = resp.json()
             index = meta.Index.create(json)
             return index

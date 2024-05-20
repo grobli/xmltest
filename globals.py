@@ -1,6 +1,6 @@
-from multiprocessing import RLock
+import multiprocessing as mp
 
 
 def init(rlock=None) -> None:
     global lock
-    lock = RLock() if not rlock else rlock
+    lock = mp.RLock() if not rlock else rlock

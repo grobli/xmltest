@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -19,10 +19,16 @@ class Version:
         release = None
         patch = None
 
-        parts = version_str.strip().split('-', maxsplit=1)
+        release_delimiter = '-'
+        parts = version_str.strip().split(release_delimiter, maxsplit=1)
+        if len(parts) == 1:
+            parts = parts[0]
+            release_delimiter = '+'
+            parts = parts.split(release_delimiter, maxsplit=1)
+
         if len(parts) > 1:
             parts, release = parts
-            release = f'-{release}'
+            release = f'{release_delimiter}{release}'
         else:
             parts = parts[0]
 
@@ -185,8 +191,8 @@ class VersionRange:
 @dataclass(init=False)
 class IndexItem:
     url: str
-    commit_id: str
-    commit_timestamp: str
+    commit_id: str | None
+    commit_timestamp: str | None
     count: int
     version_range: VersionRange
 
@@ -194,8 +200,8 @@ class IndexItem:
     def create(item_json: dict[str, Any]) -> 'IndexItem':
         item = IndexItem()
         item.url = item_json['@id']
-        item.commit_id = item_json['commitId']
-        item.commit_timestamp = item_json['commitTimeStamp']
+        item.commit_id = item_json.get('commitId')
+        item.commit_timestamp = item_json.get('commitTimeStamp')
         item.count = item_json['count']
 
         lower = Version.create(item_json['lower'])
@@ -207,8 +213,8 @@ class IndexItem:
 @dataclass(init=False)
 class Index:
     url: str
-    commit_id: str
-    commit_timestamp: str
+    commit_id: str | None
+    commit_timestamp: str | None
     count: int
     items: list[IndexItem]
 
@@ -220,8 +226,8 @@ class Index:
 
         index = Index()
         index.url = metadata_index_json['@id']
-        index.commit_id = metadata_index_json['commitId']
-        index.commit_timestamp = metadata_index_json['commitTimeStamp']
+        index.commit_id = metadata_index_json.get('commitId')
+        index.commit_timestamp = metadata_index_json.get('commitTimeStamp')
         index.count = metadata_index_json['count']
         index.items = items
         return index
@@ -320,8 +326,8 @@ class CatalogEntry:
 class CatalogItem:
     url: str
     type: str
-    commit_id: str
-    commit_timestamp: str
+    commit_id: str | None
+    commit_timestamp: str | None
     entry: CatalogEntry
 
     @staticmethod
@@ -329,8 +335,8 @@ class CatalogItem:
         ci = CatalogItem()
         ci.url = catalogitem_json['@id']
         ci.type = catalogitem_json['@type']
-        ci.commit_id = catalogitem_json['commitId']
-        ci.commit_timestamp = catalogitem_json['commitTimeStamp']
+        ci.commit_id = catalogitem_json.get('commitId')
+        ci.commit_timestamp = catalogitem_json.get('commitTimeStamp')
         ci.entry = CatalogEntry.create(catalogitem_json['catalogEntry'])
         return ci
 
@@ -338,8 +344,8 @@ class CatalogItem:
 @dataclass(init=False)
 class CatalogPage:
     url: str
-    commit_id: str
-    commit_timestamp: str
+    commit_id: str | None
+    commit_timestamp: str | None
     count: int
     items: list[CatalogItem]
     version_range: VersionRange
@@ -348,8 +354,8 @@ class CatalogPage:
     def create(catalogpage_json: dict[str, Any]) -> 'CatalogPage':
         cp = CatalogPage()
         cp.url = catalogpage_json['@id']
-        cp.commit_id = catalogpage_json['commitId']
-        cp.commit_timestamp = catalogpage_json['commitTimeStamp']
+        cp.commit_id = catalogpage_json.get('commitId')
+        cp.commit_timestamp = catalogpage_json.get('commitTimeStamp')
         cp.count = catalogpage_json['count']
 
         lower = Version.create(catalogpage_json['lower'])

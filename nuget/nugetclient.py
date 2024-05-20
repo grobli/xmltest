@@ -1,9 +1,29 @@
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 from urllib.parse import quote, urljoin
 
 import requests
 
 from .models import main_index as main
 from .models import metadata as meta
+
+
+@dataclass(init=False)
+class CacheEntry:
+    timestamp = datetime
+    data: Any
+
+    @staticmethod
+    def create(data: Any) -> 'CacheEntry':
+        ce = CacheEntry()
+        ce.timestamp = datetime.now()
+        ce.data = data
+        return ce
+    
+class Cache:
+    def __init__(self, cache_dirpath) -> None:
+        pass
 
 
 class NugetClient:

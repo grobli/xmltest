@@ -23,16 +23,18 @@ def main() -> None:
         metadata = result
         if metadata:
             deps = []
-            depgroup = [
-                dg for dg in metadata.entry.dependency_groups if 'netstandard2.' in dg.target_framework or 'net5.0' in dg.target_framework][0]
-            for dep in depgroup.dependencies:
-                if not dep.name in grouped_deps:
-                    grouped_deps[dep.name] = []
-                grouped_deps[dep.name].append(
-                    (f'{dep.name} {dep.range}', metadata.entry.name))
+            if metadata.entry.dependency_groups:
+                depgroup = [
+                    dg for dg in metadata.entry.dependency_groups if not dg.target_framework or 'netstandard2' in dg.target_framework or 'net5.0' in dg.target_framework or 'netcoreapp' in dg.target_framework][0]
 
-                deps.append(dep)
-                # print(dep.name, dep.range, depgroup.target_framework)
+                for dep in depgroup.dependencies:
+                    if not dep.name in grouped_deps:
+                        grouped_deps[dep.name] = []
+                    grouped_deps[dep.name].append(
+                        (f'{dep.name} {dep.range}', metadata.entry.name))
+
+                    deps.append(dep)
+                    # print(dep.name, dep.range, depgroup.target_framework)
 
         # print('____________________________________________________')
 

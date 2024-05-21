@@ -87,8 +87,7 @@ def get_package_references(csproj_filepath: str) -> list[PackageReference]:
     tree = ET.parse(csproj_filepath, parser=parser)
     root = tree.getroot()
 
-    XPATH = f'./{Consts.Elements.ITEM_GROUP}[{
-        Consts.Elements.PACKAGE_REFERENCE}]'
+    XPATH = f'./{Consts.Elements.ITEM_GROUP}[{Consts.Elements.PACKAGE_REFERENCE}]'
 
     prefs: list[PackageReference] = []
     itemgroups = root.findall(XPATH)

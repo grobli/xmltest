@@ -3,6 +3,7 @@ import unittest
 
 from nuget.xml import Consts, PackageReference
 
+
 # TODO - write real tests...
 
 class TestXmlMethods(unittest.TestCase):
@@ -13,10 +14,9 @@ class TestXmlMethods(unittest.TestCase):
 
         root = tree.getroot()
 
-        XPATH = f'./{Consts.XML.Elements.ITEM_GROUP}[{
-            Consts.XML.Elements.PACKAGE_REFERENCE}]'
+        xpath = f'./{Consts.Elements.ITEM_GROUP}[{Consts.Elements.PACKAGE_REFERENCE}]'
 
-        elems = root.findall(XPATH)
+        elems = root.findall(xpath)
 
         pref = PackageReference.create(list(elems[0].iter())[2], elems[0])
 
@@ -48,4 +48,3 @@ class TestXmlMethods(unittest.TestCase):
 
         print(ET.tostring(root, encoding='unicode'), '\n\n')
         print(pref)
-        

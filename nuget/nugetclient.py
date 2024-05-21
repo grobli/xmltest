@@ -1,14 +1,11 @@
 import base64
 import gzip
-import json
 import os
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from urllib.parse import quote, urljoin
-from uuid import uuid4
 
 import jsonpickle
 import requests
@@ -50,10 +47,10 @@ class Cache:
 
     @staticmethod
     def init(cache_dirpath: str) -> 'Cache':
-        def load_index(cache: Cache) -> None:
+        def load_index(_cache: Cache) -> None:
             for filename in os.listdir(cache_dirpath):
                 ce = CacheEntry.from_filename(filename)
-                cache.index[ce.keyhash] = ce
+                _cache.index[ce.keyhash] = ce
 
         if not os.path.exists(cache_dirpath):
             os.mkdir(cache_dirpath)
@@ -124,23 +121,23 @@ class NugetClient:
         return index
 
     def get_metadata(self, package_name: str, package_version: str) -> meta.CatalogItem | None:
-        def find_metadata(index: meta.Index, version: meta.Version) -> meta.IndexItem | None:
-            for item in index.items:
-                if item.version_range.inrange(version):
+        def find_metadata(_index: meta.Index, _version: meta.Version) -> meta.IndexItem | None:
+            for item in _index.items:
+                if item.version_range.inrange(_version):
                     return item
             return None
 
-        def find_catalogitem(catalog_pages: list[meta.CatalogPage], version: meta.Version) -> meta.CatalogItem | None:
+        def find_catalogitem(catalog_pages: list[meta.CatalogPage], _version: meta.Version) -> meta.CatalogItem | None:
             for page in catalog_pages:
                 for item in page.items:
-                    if item.entry.version.text == version.text:
+                    if item.entry.version.text == _version.text:
                         return item
             return None
 
-        def get_catalogpages(metadata: meta.IndexItem) -> list[meta.CatalogPage]:
+        def get_catalogpages(index_item: meta.IndexItem) -> list[meta.CatalogPage]:
             pages: list[meta.CatalogPage] = []
 
-            response = self.httpclient.get(metadata.url)
+            response = self.httpclient.get(index_item.metadata.url)
             json = response.json()
             type = json['@type']
 
@@ -156,14 +153,13 @@ class NugetClient:
 
             return pages
 
-        def get_index(package_name: str) -> meta.Index:
+        def get_index(_package_name: str) -> meta.Index:
             id = self.__index.resources['RegistrationsBaseUrl/3.6.0'][0].id
-            url = urljoin(id, f'{package_name.lower()}/index.json')
+            url = urljoin(id, f'{_package_name.lower()}/index.json')
             url = quote(url, safe='/:')
             resp = self.httpclient.get(url)
             json = resp.json()
-            index = meta.Index.create(json)
-            return index
+            return meta.Index.create(json)
 
         index = get_index(package_name)
         version = meta.Version.create(package_version)

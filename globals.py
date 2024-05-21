@@ -1,5 +1,7 @@
 import multiprocessing as mp
 
+global lock
+
 
 def init(rlock=None) -> None:
     global lock

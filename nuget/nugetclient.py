@@ -19,21 +19,52 @@ from .models import metadata as meta
 @dataclass()
 class CacheEntry:
     keyhash: str
+    value: Any
+    dirpath: str
     expiry_date: datetime = field(
         default_factory=lambda: datetime.now() + timedelta(days=10))
 
     @staticmethod
-    def from_filename(filename: str) -> 'CacheEntry':
+    def from_filename(filename: str, cache_dirpath: str) -> 'CacheEntry':
         keyhash, expiry_base64, _ = filename.split('.')
         expiry_str = base64.b64decode(expiry_base64).decode()
         expiry_date = datetime.fromisoformat(expiry_str)
-        return CacheEntry(keyhash, expiry_date)
+        ce = CacheEntry(keyhash, None, cache_dirpath, expiry_date)
+        ce.value = CacheEntry.__load_data(ce.filepath)
+        return ce
 
     @property
     def filename(self) -> str:
         expiry_bytes = self.expiry_date.isoformat().encode()
         expiry_base64 = base64.b64encode(expiry_bytes).decode()
         return f'{self.keyhash}.{expiry_base64}.cache'
+
+    @property
+    def filepath(self) -> str:
+        return os.path.join(self.dirpath, self.filename)
+
+    def isexpired(self) -> bool:
+        now = datetime.now()
+        return now > self.expiry_date
+
+    @staticmethod
+    def __load_data(filepath: str) -> Any:
+        with gzip.open(filepath, mode='rb') as file:
+            json = file.read().decode()
+            value = jsonpickle.decode(json)
+            return value
+
+    def save(self) -> None:
+        if os.path.exists(self.filepath):
+            return
+
+        with gzip.open(self.filepath, mode='wb') as file:
+            json: str = jsonpickle.encode(self.value)
+            file.write(json.encode())
+
+    def delete_file(self) -> None:
+        if os.path.exists(self.filepath):
+            os.remove(self.filepath)
 
 
 class Cache:
@@ -49,7 +80,7 @@ class Cache:
     def init(cache_dirpath: str) -> 'Cache':
         def load_index(_cache: Cache) -> None:
             for filename in os.listdir(cache_dirpath):
-                ce = CacheEntry.from_filename(filename)
+                ce = CacheEntry.from_filename(filename, cache_dirpath)
                 _cache.index[ce.keyhash] = ce
 
         if not os.path.exists(cache_dirpath):
@@ -59,22 +90,16 @@ class Cache:
         load_index(cache)
         return cache
 
-    def add(self, key: str, value: Any) -> None:
+    def add(self, key: str, value: Any, expires_in: timedelta = None) -> None:
         keyhash = Cache.hashkey(key)
 
         with globals.lock:
             if ce := self.index.get(keyhash):
-                del self.index[keyhash]
-                filepath = os.path.join(self.cache_dirpath, ce.filename)
-                os.remove(filepath)
+                self.__delete(ce.keyhash)
 
-            cache_entry = CacheEntry(keyhash)
+            cache_entry = CacheEntry(keyhash, value, self.cache_dirpath) if not expires_in else CacheEntry(
+                keyhash, value, self.cache_dirpath, datetime.now() + expires_in)
             self.index[cache_entry.keyhash] = cache_entry
-
-            filepath = os.path.join(self.cache_dirpath, cache_entry.filename)
-            with gzip.open(filepath, mode='wb') as file:
-                json: str = jsonpickle.encode(value)
-                file.write(json.encode())
 
     def get(self, key: str) -> Any | None:
         keyhash = Cache.hashkey(key)
@@ -82,26 +107,60 @@ class Cache:
         with globals.lock:
             if keyhash not in self.index:
                 return None
-            filepath = os.path.join(
-                self.cache_dirpath, self.index[keyhash].filename)
-            with gzip.open(filepath, mode='rb') as file:
-                json = file.read().decode()
-                value = jsonpickle.decode(json)
-                return value
+
+            entry = self.index[keyhash]
+            if entry.isexpired():
+                self.__delete(keyhash)
+                return None
+
+            return entry.value
+
+    def __delete(self, keyhash: str) -> None:
+        with globals.lock:
+            if entry := self.index.get(keyhash):
+                del self.index[keyhash]
+                entry.delete_file()
+                del entry
+
+    def delete(self, key: str) -> None:
+        keyhash = Cache.hashkey(key)
+        self.__delete(keyhash)
+
+    def save(self) -> None:
+        for _, entry in self.index.items():
+            entry.save()
+
+    def delete_expired(self) -> None:
+        for _, entry in self.index.items():
+            if entry.isexpired():
+                del self.index[entry.keyhash]
+                entry.delete_file()
+                del entry
+
+    def __contains__(self, key: str) -> bool:
+        keyhash = Cache.hashkey(key)
+        return keyhash in self.index
 
 
 class CachedHttpClient:
-    def __init__(self, cache_dirpath: str) -> None:
+    def __init__(self, cache_dirpath: str, default_expiration_time: timedelta = None) -> None:
+        self.default_expiry_time = default_expiration_time if default_expiration_time else timedelta(
+            days=5)
         self.cache = Cache.init(cache_dirpath)
         self.session = requests.Session()
 
     def get(self, url: str) -> requests.Response:
+        print(f'Fetching: {url}')
         if response := self.cache.get(url):
             return response
         response = self.session.get(url)
         response.raise_for_status()
-        self.cache.add(url, response)
+        self.cache.add(url, response, self.default_expiry_time)
         return response
+
+    def __del__(self) -> None:
+        self.cache.delete_expired()
+        self.cache.save()
 
 
 class NugetClient:
